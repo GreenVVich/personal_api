@@ -5,3 +5,4 @@ logs/
 data/
 .venv/
 .idea/
+*.cmd

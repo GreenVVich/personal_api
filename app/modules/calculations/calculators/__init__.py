@@ -18,9 +18,7 @@ def load_calculators() -> list[SCalculator]:
             continue
 
         if not isinstance(calculator, SCalculator):
-            raise TypeError(
-                f"{module.__name__}.calculator must be an instance of SCalculator"
-            )
+            raise TypeError(f"{module.__name__}.calculator must be an instance of SCalculator")
 
         calculators.append(calculator)
 

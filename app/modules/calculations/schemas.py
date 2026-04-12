@@ -1,60 +1,82 @@
+from typing import Any
+
 from pydantic import BaseModel, Field, model_validator
-from typing import List, Dict, Optional, Any
 
 
 class SInput(BaseModel):
     id: str
     required: bool = True
-    default: Optional[float] = None
+    default: float | None = None
 
 
 class SConstant(BaseModel):
+    id: str
     value: float
+
+
+class SValueAction(BaseModel):
+    id: str
+    function: str
+    args: dict[str, Any] | list[Any] | None = None
 
 
 class SValue(BaseModel):
     id: str
-    function: Optional[str] = None
-    args: Dict[str, str] = Field(default_factory=dict)
-    value: Optional[float] = None
-    tags: List[str] = Field(default_factory=list)
-    text_template: Optional[str] = None
-    round: Optional[int] = None
+    actions: list[SValueAction] = Field(default_factory=list)
+    tags: list[str] = Field(default_factory=list)
+    text_template: str | None = None
 
 
 class SCalculator(BaseModel):
     id: str
-    inputs: List[SInput] = Field(default_factory=list)
-    constants: Dict[str, SConstant]
-    values: List[SValue] = Field(default_factory=list)
+    inputs: list[SInput] = Field(default_factory=list)
+    constants: list[SConstant] = Field(default_factory=list)
+    values: list[SValue] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def validate_graph(self):
-        available = set()
+        available: set[str] = {input_def.id for input_def in self.inputs}
+        errors: list[str] = []
 
-        # inputs
-        for i in self.inputs:
-            available.add(i.id)
+        constant_ids: list[str] = [constant.id for constant in self.constants]
+        duplicate_constants: set[str] = {
+            constant_id for constant_id in constant_ids if constant_ids.count(constant_id) > 1
+        }
+        if duplicate_constants:
+            raise ValueError(f"Duplicate constant ids: {sorted(duplicate_constants)}")
 
-        # constants
-        for c in self.constants.keys():
-            available.add(c)
+        for constant in self.constants:
+            available.add(constant.id)
 
-        errors = []
+        for value in self.values:
+            if not value.actions:
+                errors.append(f"{value.id}: actions are required")
+                continue
 
-        for v in self.values:
-            if v.function:
-                for source in v.args.values():
-                    if source not in available:
-                        errors.append(f"{v.id}: missing '{source}'\n")
+            for action in value.actions:
+                if action.args is None:
+                    available.add(action.id)
+                    continue
 
-            available.add(v.id)
+                if isinstance(action.args, dict):
+                    sources: list[Any] = list(action.args.values())
+                else:
+                    sources = list(action.args)
+
+                for source in sources:
+                    if isinstance(source, str) and source not in available:
+                        errors.append(f"{action.id}: missing '{source}'")
+
+                available.add(action.id)
+
+            available.add(value.id)
 
         if errors:
             raise ValueError(f"Dependency error: {errors}")
 
         return self
 
-class CalcRequest(BaseModel):
+
+class SCalcRequest(BaseModel):
     calculator_type: str
-    inputs: Dict[str, Any]
+    inputs: dict[str, Any]

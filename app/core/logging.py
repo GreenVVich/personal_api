@@ -6,7 +6,7 @@ from app.core.config import settings
 
 LOG_FORMAT: str = "%(asctime)s | %(levelname)s | %(name)s | %(message)s"
 LOGS_DIR: Path = Path(__file__).resolve().parent.parent / "logs"
-LOG_LEVEL: int = getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO)
+LOG_LEVEL: int = getattr(logging, settings.LOG_LEVEL, logging.INFO)
 LOG_FILE: Path = LOGS_DIR / f"app_{datetime.now().strftime('%d-%m-%Y')}.log"
 
 LOGS_DIR.mkdir(parents=True, exist_ok=True)
@@ -29,6 +29,3 @@ def get_logger(name: str = "api") -> logging.Logger:
 
     _loggers[name] = logger
     return logger
-
-
-logger = get_logger()

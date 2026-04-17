@@ -4,7 +4,7 @@ from pathlib import Path
 from app.modules.calculations.schemas import SCalculator
 
 
-def load_calculators() -> list[SCalculator]:
+def load_calculators_from_repo() -> list[SCalculator]:
     calculators: list[SCalculator] = []
     base_path = Path(__file__).resolve().parent
 

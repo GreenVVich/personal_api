@@ -1,6 +1,6 @@
 from typing import Any
 
-from app.modules.calculations.calculators import load_calculators
+from app.modules.calculations.calculators import load_calculators_from_repo
 from app.modules.calculations.schemas import SCalculator, SValue, SValueAction
 from app.tools.action import action
 from app.tools.registry import get
@@ -11,8 +11,10 @@ class CalculationError(Exception):
 
 
 class CalculationService:
+    calculators: list[SCalculator]
+
     def __init__(self) -> None:
-        self.calculators: list[SCalculator] = load_calculators()
+        self.calculators = [*load_calculators_from_repo()]
 
     def get_calculator(self, calc_id: str) -> SCalculator:
         for calculator in self.calculators:
@@ -20,7 +22,7 @@ class CalculationService:
                 return calculator
         raise CalculationError(f"Calculator '{calc_id}' not found")
 
-    def prepare_inputs(
+    def validate_calculator(
         self,
         calculator: SCalculator,
         data: dict[str, float],
@@ -55,10 +57,7 @@ class CalculationService:
             return [], {}
 
         if isinstance(value_action.args, dict):
-            return [], {
-                param: self.resolve_arg(source, context)
-                for param, source in value_action.args.items()
-            }
+            return [], {param: self.resolve_arg(source, context) for param, source in value_action.args.items()}
 
         if isinstance(value_action.args, list):
             return [self.resolve_arg(source, context) for source in value_action.args], {}
@@ -79,9 +78,7 @@ class CalculationService:
             raise CalculationError(f"{value_action.function}: {exc}") from exc
 
         if not isinstance(result, int | float):
-            raise CalculationError(
-                f"{value_action.function}: result must be numeric, got {type(result).__name__}"
-            )
+            raise CalculationError(f"{value_action.function}: result must be numeric, got {type(result).__name__}")
 
         return float(result)
 
@@ -109,7 +106,7 @@ class CalculationService:
         inputs: dict[str, float],
     ) -> dict[str, str | dict[str, float]]:
         calculator: SCalculator = self.get_calculator(calculator_id)
-        context: dict[str, float] = self.prepare_inputs(calculator, inputs)
+        context: dict[str, float] = self.validate_calculator(calculator, inputs)
 
         for constant in calculator.constants:
             context[constant.id] = constant.value

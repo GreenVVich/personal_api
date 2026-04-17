@@ -77,7 +77,7 @@ calculator = SCalculator(
             actions=[
                 SValueAction(
                     id="median_final",
-                    function="value",
+                    function="assign",
                     args={"value": "height"},
                 ),
             ],
@@ -89,7 +89,7 @@ calculator = SCalculator(
             actions=[
                 SValueAction(
                     id="bisector_final",
-                    function="value",
+                    function="assign",
                     args={"value": "height"},
                 ),
             ],
@@ -140,7 +140,7 @@ calculator = SCalculator(
             actions=[
                 SValueAction(
                     id="angle_a_final",
-                    function="value",
+                    function="assign",
                     args={"value": 60},
                 ),
             ],
@@ -152,7 +152,7 @@ calculator = SCalculator(
             actions=[
                 SValueAction(
                     id="angle_b_final",
-                    function="value",
+                    function="assign",
                     args={"value": 60},
                 ),
             ],
@@ -164,7 +164,7 @@ calculator = SCalculator(
             actions=[
                 SValueAction(
                     id="angle_c_final",
-                    function="value",
+                    function="assign",
                     args={"value": 60},
                 ),
             ],

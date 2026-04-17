@@ -21,29 +21,25 @@ def action(
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             if enable_logging:
-                logger.info(
-                    "Action '%s' started in group '%s'",
-                    resolved_action_id,
-                    group,
-                )
+                logger.info("Action '%s' started", resolved_action_id)
 
             try:
                 result: Any = func(*args, **kwargs)
+                logger.debug(
+                    "Action '%s' input:\n%s\n%s\nAction '%s' out:\n'%s'",
+                    resolved_action_id,
+                    [*args],
+                    {**kwargs},
+                    resolved_action_id,
+                    result,
+                )
             except Exception:
                 if enable_logging:
-                    logger.exception(
-                        "Action '%s' failed in group '%s'",
-                        resolved_action_id,
-                        group,
-                    )
+                    logger.exception("Action '%s' failed", resolved_action_id)
                 raise
 
             if enable_logging:
-                logger.info(
-                    "Action '%s' completed in group '%s'",
-                    resolved_action_id,
-                    group,
-                )
+                logger.info("Action '%s' completed", resolved_action_id)
 
             return result
 
@@ -85,9 +81,7 @@ def run_action_handler(handler: Callable[..., Any], action_input: dict[str, Any]
     if not parameters:
         return handler()
 
-    has_var_keyword: bool = any(
-        parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters
-    )
+    has_var_keyword: bool = any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters)
     if has_var_keyword:
         return handler(**action_input)
 

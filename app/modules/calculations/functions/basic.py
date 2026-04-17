@@ -14,13 +14,11 @@ def _as_numeric_kwargs(values: dict[str, Any]) -> dict[str, float]:
 
 
 def _as_numeric_args(values: list[Any], *, function_name: str) -> list[float]:
-    return [
-        _as_number(value, name=f"{function_name}[{index}]") for index, value in enumerate(values)
-    ]
+    return [_as_number(value, name=f"{function_name}[{index}]") for index, value in enumerate(values)]
 
 
-@register("value")
-def value(value: Any) -> float:
+@register("assign")
+def assign(value: Any) -> float:
     return _as_number(value, name="value")
 
 

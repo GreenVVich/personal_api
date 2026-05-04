@@ -3,49 +3,44 @@ from typing import Any
 from pydantic import BaseModel, Field, model_validator
 
 
-class SInput(BaseModel):
+class CalculatorInput(BaseModel):
     id: str
     required: bool = True
     default: float | None = None
 
 
-class SConstant(BaseModel):
+class CalculatorConstant(BaseModel):
     id: str
     value: float
 
 
-class SValueAction(BaseModel):
+class CalculatorValueAction(BaseModel):
     id: str
     function: str
     args: dict[str, Any] | list[Any] | None = None
 
 
-class SValue(BaseModel):
+class CalculatorValue(BaseModel):
     id: str
-    actions: list[SValueAction] = Field(default_factory=list)
+    actions: list[CalculatorValueAction] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     text_template: str | None = None
 
 
-class SCalculator(BaseModel):
+class CalculatorDefinition(BaseModel):
     id: str
-    inputs: list[SInput] = Field(default_factory=list)
-    constants: list[SConstant] = Field(default_factory=list)
-    values: list[SValue] = Field(default_factory=list)
+    inputs: list[CalculatorInput] = Field(default_factory=list)
+    constants: list[CalculatorConstant] = Field(default_factory=list)
+    values: list[CalculatorValue] = Field(default_factory=list)
 
     @model_validator(mode="after")
-    def validate_graph(self):
-        available: set[str] = {input_def.id for input_def in self.inputs}
+    def validate_graph(self) -> CalculatorDefinition:
+        available: set[str] = {item.id for item in self.inputs}
         errors: list[str] = []
 
-        constant_ids: list[str] = [constant.id for constant in self.constants]
-        duplicate_constants: set[str] = {
-            constant_id for constant_id in constant_ids if constant_ids.count(constant_id) > 1
-        }
-        if duplicate_constants:
-            raise ValueError(f"Duplicate constant ids: {sorted(duplicate_constants)}")
-
         for constant in self.constants:
+            if constant.id in available:
+                errors.append(f"duplicate '{constant.id}'")
             available.add(constant.id)
 
         for value in self.values:
@@ -54,14 +49,11 @@ class SCalculator(BaseModel):
                 continue
 
             for action in value.actions:
-                if action.args is None:
-                    available.add(action.id)
-                    continue
-
-                if isinstance(action.args, dict):
-                    sources: list[Any] = list(action.args.values())
-                else:
-                    sources = list(action.args)
+                sources: list[Any] = []
+                if isinstance(action.args, list):
+                    sources = action.args
+                elif isinstance(action.args, dict):
+                    sources = list(action.args.values())
 
                 for source in sources:
                     if isinstance(source, str) and source not in available:
@@ -77,6 +69,5 @@ class SCalculator(BaseModel):
         return self
 
 
-class SCalcRequest(BaseModel):
-    calculator_type: str
-    inputs: dict[str, Any]
+class CalculationRunRequest(BaseModel):
+    inputs: dict[str, Any] = Field(default_factory=dict)

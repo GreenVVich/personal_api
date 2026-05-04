@@ -1,9 +1,10 @@
+from __future__ import annotations
+
 from typing import Any
 
-from app.modules.calculations.calculators import load_calculators_from_repo
-from app.modules.calculations.schemas import SCalculator, SValue, SValueAction
-from app.tools.action import action
-from app.tools.registry import get
+from app.box.core import Box
+from app.box.runtime import action
+from app.modules.calculations.schemas import CalculatorDefinition, CalculatorValueAction
 
 
 class CalculationError(Exception):
@@ -11,118 +12,126 @@ class CalculationError(Exception):
 
 
 class CalculationService:
-    calculators: list[SCalculator]
+    def get_definition(self, box: Box) -> CalculatorDefinition:
+        try:
+            payload = {
+                "id": box.name,
+                "inputs": box.cells.get("inputs", []),
+                "constants": box.cells.get("constants", []),
+                "values": box.cells.get("values", []),
+            }
+            return CalculatorDefinition.model_validate(payload)
+        except Exception as exc:
+            raise CalculationError(f"Invalid calculator box '{box.name}': {exc}") from exc
 
-    def __init__(self) -> None:
-        self.calculators = [*load_calculators_from_repo()]
-
-    def get_calculator(self, calc_id: str) -> SCalculator:
-        for calculator in self.calculators:
-            if calculator.id == calc_id:
-                return calculator
-        raise CalculationError(f"Calculator '{calc_id}' not found")
-
-    def validate_calculator(
+    def validate_inputs(
         self,
-        calculator: SCalculator,
-        data: dict[str, float],
+        definition: CalculatorDefinition,
+        data: dict[str, Any],
     ) -> dict[str, float]:
         context: dict[str, float] = {}
-        missing_inputs: list[str] = []
+        missing: list[str] = []
 
-        for input_def in calculator.inputs:
+        for input_def in definition.inputs:
             if input_def.id in data:
-                context[input_def.id] = data[input_def.id]
+                context[input_def.id] = self._as_number(data[input_def.id], name=input_def.id)
             elif input_def.default is not None:
                 context[input_def.id] = input_def.default
             elif input_def.required:
-                missing_inputs.append(input_def.id)
+                missing.append(input_def.id)
 
-        if missing_inputs:
-            raise CalculationError(f"Missing inputs: {missing_inputs}")
+        if missing:
+            raise CalculationError(f"Missing inputs: {missing}")
 
         return context
 
-    def resolve_arg(self, source: Any, context: dict[str, float]) -> Any:
-        if isinstance(source, str) and source in context:
-            return context[source]
-        return source
-
     def resolve_action_args(
         self,
-        value_action: SValueAction,
+        action_def: CalculatorValueAction,
         context: dict[str, float],
     ) -> tuple[list[Any], dict[str, Any]]:
-        if value_action.args is None:
+        if action_def.args is None:
             return [], {}
 
-        if isinstance(value_action.args, dict):
-            return [], {param: self.resolve_arg(source, context) for param, source in value_action.args.items()}
+        if isinstance(action_def.args, list):
+            return [self.resolve_value(item, context) for item in action_def.args], {}
 
-        if isinstance(value_action.args, list):
-            return [self.resolve_arg(source, context) for source in value_action.args], {}
+        if isinstance(action_def.args, dict):
+            return [], {key: self.resolve_value(value, context) for key, value in action_def.args.items()}
 
-        raise CalculationError(f"{value_action.id}: unsupported args type")
+        raise CalculationError(f"{action_def.id}: unsupported args type")
 
-    def execute_action(
-        self,
-        value_action: SValueAction,
-        context: dict[str, float],
-    ) -> float:
-        function = get(value_action.function)
-        positional_args, keyword_args = self.resolve_action_args(value_action, context)
+    def resolve_value(self, value: Any, context: dict[str, float]) -> Any:
+        if isinstance(value, str) and value in context:
+            return context[value]
+        return value
+
+    def run_function(self, function_name: str, *args: Any, **kwargs: Any) -> float:
+        from app.box.runtime import get_action_handler
+
+        handler = get_action_handler(function_name)
 
         try:
-            result: object = function(*positional_args, **keyword_args)
+            result = handler(*args, **kwargs)
         except Exception as exc:
-            raise CalculationError(f"{value_action.function}: {exc}") from exc
+            raise CalculationError(f"{function_name}: {exc}") from exc
 
         if not isinstance(result, int | float):
-            raise CalculationError(f"{value_action.function}: result must be numeric, got {type(result).__name__}")
+            raise CalculationError(f"{function_name}: result must be numeric, got {type(result).__name__}")
 
         return float(result)
 
     def execute_value(
         self,
-        value_def: SValue,
+        action_defs: list[CalculatorValueAction],
         context: dict[str, float],
     ) -> float:
         result: float | None = None
 
-        for value_action in value_def.actions:
-            result = self.execute_action(value_action, context)
-            context[value_action.id] = result
+        for action_def in action_defs:
+            args, kwargs = self.resolve_action_args(action_def, context)
+            result = self.run_function(action_def.function, *args, **kwargs)
+            context[action_def.id] = result
 
         if result is None:
-            raise CalculationError(f"{value_def.id}: action result is required")
+            raise CalculationError("Value must contain at least one action")
 
-        context[value_def.id] = result
         return result
 
-    @action("calculate", group="calculations", enable_logging=True)
-    def calculate(
-        self,
-        calculator_id: str,
-        inputs: dict[str, float],
-    ) -> dict[str, str | dict[str, float]]:
-        calculator: SCalculator = self.get_calculator(calculator_id)
-        context: dict[str, float] = self.validate_calculator(calculator, inputs)
+    def calculate(self, box: Box, inputs: dict[str, Any]) -> dict[str, Any]:
+        definition = self.get_definition(box)
+        context = self.validate_inputs(definition, inputs)
 
-        for constant in calculator.constants:
+        for constant in definition.constants:
             context[constant.id] = constant.value
 
         results: dict[str, float] = {}
         text_blocks: list[str] = []
 
-        for value_def in calculator.values:
-            value: float = self.execute_value(value_def, context)
-            results[value_def.id] = value
+        for value_def in definition.values:
+            result = self.execute_value(value_def.actions, context)
+            context[value_def.id] = result
+            results[value_def.id] = result
 
             if "Show" in value_def.tags and value_def.text_template:
                 text_blocks.append(value_def.text_template.format(**context))
 
         return {
-            "calculator": calculator.id,
+            "calculator": definition.id,
             "results": results,
             "text": "\n".join(text_blocks),
         }
+
+    @staticmethod
+    def _as_number(value: Any, *, name: str) -> float:
+        if not isinstance(value, int | float):
+            raise CalculationError(f"{name} must be numeric")
+        return float(value)
+
+
+calculation_service = CalculationService()
+
+
+@action("calculator.calculate", enable_logging=True)
+def calculate_box(box: Box, inputs: dict[str, Any]) -> dict[str, Any]:
+    return calculation_service.calculate(box, inputs)
